@@ -87,8 +87,9 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Cyotek.Drawing.BitmapFont">
-      <HintPath>..\..\Components\Cyotek.Drawing.BitmapFont.dll</HintPath>
+    <Reference Include="Cyotek.Drawing.BitmapFont, Version=1.0.2.0, Culture=neutral, PublicKeyToken=58daa28b0b2de221, processorArchitecture=MSIL">
+      <HintPath>..\packages\Cyotek.Drawing.BitmapFont.1.0.2.0\lib\net20\Cyotek.Drawing.BitmapFont.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="SharpDX, Version=2.6.3.0, Culture=neutral, PublicKeyToken=b4dcf0f35e5521f1, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -290,7 +291,6 @@
     <EmbeddedResource Include="Shaders\Lines.fx" />
     <EmbeddedResource Include="Shaders\_compile_instructions.txt" />
     <Content Include="Shaders\BillboardText.fx" />
-    <Content Include="Shaders\PerVertexPhong.fx" />
     <Content Include="Shaders\Points.fx" />
     <EmbeddedResource Include="Textures\arial.png" />
     <Content Include="sharpdx_direct3d11_effects_x64.dll">

@@ -90,7 +90,6 @@ namespace HelixToolkit.Wpf.SharpDX
         public InputLayout InputLayout { get; private set; }
     }
 
-
     public sealed class Techniques
     {
         static Techniques()
@@ -125,7 +124,6 @@ namespace HelixToolkit.Wpf.SharpDX
             RenderLines = new RenderTechnique("RenderLines");
             RenderPoints = new RenderTechnique("RenderPoints");
             RenderBillboard = new RenderTechnique("RenderBillboard");
-            RenderPerVertexPhong = new RenderTechnique("RenderPerVertexPhong");
 
             RenderTechniques = new List<RenderTechnique>
             { 
@@ -140,7 +138,6 @@ namespace HelixToolkit.Wpf.SharpDX
                 RenderTangents, 
                 RenderTexCoords,
                 RenderWires,
-                RenderPerVertexPhong,
 #if DEFERRED
                 RenderDeferred,
                 RenderGBuffer,  
@@ -168,7 +165,6 @@ namespace HelixToolkit.Wpf.SharpDX
                 {     Techniques.RenderLines,      Properties.Resources._default}, 
                 {     Techniques.RenderPoints,     Properties.Resources._default},
                 {     Techniques.RenderBillboard,  Properties.Resources._default},
-                {     Techniques.RenderPerVertexPhong, Properties.Resources._default},
     #if TESSELLATION                                        
                 {     Techniques.RenderPNTriangs,  Properties.Resources._default}, 
                 {     Techniques.RenderPNQuads,    Properties.Resources._default}, 
@@ -208,7 +204,6 @@ namespace HelixToolkit.Wpf.SharpDX
         public static RenderTechnique RenderLines { get; private set; }
         public static RenderTechnique RenderPoints { get; private set; }
         public static RenderTechnique RenderBillboard { get; private set; }
-        public static RenderTechnique RenderPerVertexPhong { get; private set; }
 
 #if TESSELLATION
         public static RenderTechnique RenderPNTriangs { get; private set; }
@@ -224,21 +219,57 @@ namespace HelixToolkit.Wpf.SharpDX
         public static IEnumerable<RenderTechnique> RenderTechniques { get; private set; }
     }
 
+    public sealed class EffectInitializationEventArgs : EventArgs
+    {
+        private global::SharpDX.Direct3D11.Device device;
+        private byte[] shaderEffectBytecode;
 
+        public global::SharpDX.Direct3D11.Device Device
+        {
+            get { return device; }
+        }
+
+        public byte[] ShaderEffectBytecode
+        {
+            get { return shaderEffectBytecode;}
+        }
+
+        public EffectInitializationEventArgs(global::SharpDX.Direct3D11.Device device, byte[] shaderEffectBytecode)
+        {
+            this.device = device;
+            this.shaderEffectBytecode = shaderEffectBytecode;
+        }
+    }
 
     public sealed class EffectsManager : IDisposable
     {
         /// <summary>
+        /// The minimum supported feature level.
+        /// </summary>
+        private const global::SharpDX.Direct3D.FeatureLevel MinimumFeatureLevel = global::SharpDX.Direct3D.FeatureLevel.Level_10_0;
+
+        private static EffectsManager instance;
+
+        /// <summary>
         /// 
         /// </summary>
-        public static readonly EffectsManager Instance = new EffectsManager();
-
+        public static EffectsManager Instance
+        {
+            get { return instance ?? (instance = new EffectsManager()); }
+        } 
 
         /// <summary>
         /// 
         /// </summary>
         static EffectsManager()
         {
+        }
+
+        public event Action<EffectInitializationEventArgs> InitializingEffects;
+        internal void OnInitializingEffects(EffectInitializationEventArgs args)
+        {
+            if (InitializingEffects != null)
+                InitializingEffects(args);
         }
 
         /// <summary>
@@ -248,15 +279,19 @@ namespace HelixToolkit.Wpf.SharpDX
         {
 #if DX11
             var adapter = GetBestAdapter();
-            if (adapter == null)
+
+            if (adapter != null)
             {
-                System.Windows.MessageBox.Show("No DirectX 10 or higher adapter found, a software adapter will be used!", "Warning");
-                this.device = new global::SharpDX.Direct3D11.Device(DriverType.Warp, DeviceCreationFlags.BgraSupport, FeatureLevel.Level_10_0);
-            }
-            else
-            {
-                this.device = new global::SharpDX.Direct3D11.Device(adapter, DeviceCreationFlags.BgraSupport);
-                //this.device = new Direct3D11.Device(Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport, Direct3D.FeatureLevel.Level_11_0); 
+                if (adapter.Description.VendorId == 0x1414 && adapter.Description.DeviceId == 0x8c)
+                {
+                    this.driverType = DriverType.Warp;
+                    this.device = new global::SharpDX.Direct3D11.Device(adapter, DeviceCreationFlags.BgraSupport, FeatureLevel.Level_10_0);
+                }
+                else
+                {
+                    this.driverType = DriverType.Hardware;
+                    this.device = new global::SharpDX.Direct3D11.Device(adapter, DeviceCreationFlags.BgraSupport);
+                }
             }
 #else
             this.device = new Direct3D11.Device(Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport, Direct3D.FeatureLevel.Level_10_1);                        
@@ -273,17 +308,29 @@ namespace HelixToolkit.Wpf.SharpDX
             using (var f = new Factory())
             {
                 Adapter bestAdapter = null;
-                var bestLevel = global::SharpDX.Direct3D.FeatureLevel.Level_10_0;
+                long bestVideoMemory = 0;
+                long bestSystemMemory = 0;
 
                 foreach (var item in f.Adapters)
                 {
                     var level = global::SharpDX.Direct3D11.Device.GetSupportedFeatureLevel(item);
-                    if (bestAdapter == null || level > bestLevel)
+
+                    if (level < EffectsManager.MinimumFeatureLevel)
+                    {
+                        continue;
+                    }
+
+                    long videoMemory = item.Description.DedicatedVideoMemory;
+                    long systemMemory = item.Description.DedicatedSystemMemory;
+
+                    if ((bestAdapter == null) || (videoMemory > bestVideoMemory) || ((videoMemory == bestVideoMemory) && (systemMemory > bestSystemMemory)))
                     {
                         bestAdapter = item;
-                        bestLevel = level;
+                        bestVideoMemory = videoMemory;
+                        bestSystemMemory = systemMemory;
                     }
                 }
+
                 return bestAdapter;
             }
         }
@@ -294,9 +341,19 @@ namespace HelixToolkit.Wpf.SharpDX
         public static global::SharpDX.Direct3D11.Device Device { get { return Instance.device; } }
 
         /// <summary>
+        /// Gets the device's driver type.
+        /// </summary>
+        public static global::SharpDX.Direct3D.DriverType DriverType { get { return Instance.driverType; } }
+
+        /// <summary>
         /// 
         /// </summary>
         private global::SharpDX.Direct3D11.Device device;
+
+        /// <summary>
+        /// The driver type.
+        /// </summary>
+        private global::SharpDX.Direct3D.DriverType driverType;
 
         /// <summary>
         /// 
@@ -343,7 +400,6 @@ namespace HelixToolkit.Wpf.SharpDX
                     Techniques.RenderLines,
                     Techniques.RenderPoints,
                     Techniques.RenderBillboard,
-                    Techniques.RenderPerVertexPhong,
 #if TESSELLATION
                     Techniques.RenderPNTriangs,
                     Techniques.RenderPNQuads,
@@ -373,19 +429,21 @@ namespace HelixToolkit.Wpf.SharpDX
                     new InputElement("NORMAL",   0, Format.R32G32B32_Float,    InputElement.AppendAligned, 0),             
                     new InputElement("TANGENT",  0, Format.R32G32B32_Float,    InputElement.AppendAligned, 0),             
                     new InputElement("BINORMAL", 0, Format.R32G32B32_Float,    InputElement.AppendAligned, 0),  
-           
+
                     //INSTANCING: die 4 texcoords sind die matrix, die mit jedem buffer reinwandern
                     new InputElement("TEXCOORD", 1, Format.R32G32B32A32_Float, InputElement.AppendAligned, 1, InputClassification.PerInstanceData, 1),                 
                     new InputElement("TEXCOORD", 2, Format.R32G32B32A32_Float, InputElement.AppendAligned, 1, InputClassification.PerInstanceData, 1),
                     new InputElement("TEXCOORD", 3, Format.R32G32B32A32_Float, InputElement.AppendAligned, 1, InputClassification.PerInstanceData, 1),
                     new InputElement("TEXCOORD", 4, Format.R32G32B32A32_Float, InputElement.AppendAligned, 1, InputClassification.PerInstanceData, 1),
                 });
+                defaultInputLayout.DebugName = "Default";
 
                 // ------------------------------------------------------------------------------------
                 var linesInputLayout = new InputLayout(device, GetEffect(Techniques.RenderLines).GetTechniqueByName(Techniques.RenderLines.Name).GetPassByIndex(0).Description.Signature, new[] 
                 {
                     new InputElement("POSITION", 0, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0),
                     new InputElement("COLOR",    0, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0),
+                    new InputElement("COLOR",    1, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0),
 
                     //INSTANCING: die 4 texcoords sind die matrix, die mit jedem buffer reinwandern
                     new InputElement("TEXCOORD", 1, Format.R32G32B32A32_Float, InputElement.AppendAligned, 1, InputClassification.PerInstanceData, 1),                 
@@ -403,7 +461,8 @@ namespace HelixToolkit.Wpf.SharpDX
                 var pointsInputLayout = new InputLayout(device, GetEffect(Techniques.RenderPoints).GetTechniqueByName(Techniques.RenderPoints.Name).GetPassByIndex(0).Description.Signature, new[] 
                 {
                     new InputElement("POSITION", 0, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0),
-                    new InputElement("COLOR",    0, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0)
+                    new InputElement("COLOR",    0, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0),
+                    new InputElement("COLOR",    1, Format.R32G32B32A32_Float, InputElement.AppendAligned, 0)
                 });
 
                 var billboardInputLayout = new InputLayout(device, GetEffect(Techniques.RenderBillboard).GetTechniqueByName(Techniques.RenderBillboard.Name).GetPassByIndex(0).Description.Signature, new[]
@@ -458,7 +517,6 @@ namespace HelixToolkit.Wpf.SharpDX
                     Techniques.RenderTexCoords, 
                     Techniques.RenderColors, 
                     Techniques.RenderWires,
-                    Techniques.RenderPerVertexPhong,
 #if DEFERRED 
                     Techniques.RenderDeferred,
                     Techniques.RenderGBuffer,
@@ -575,7 +633,7 @@ namespace HelixToolkit.Wpf.SharpDX
         /// <param name="shaderEffectBytecode"></param>
         /// <param name="techniques"></param>
         /// <param name="eFlags"></param>
-        internal void RegisterEffect(byte[] shaderEffectBytecode, RenderTechnique[] techniques, EffectFlags eFlags = EffectFlags.None)
+        public void RegisterEffect(byte[] shaderEffectBytecode, RenderTechnique[] techniques, EffectFlags eFlags = EffectFlags.None)
         {
             var effect = new Effect(device, shaderEffectBytecode, eFlags);
             foreach (var tech in techniques)
@@ -587,7 +645,7 @@ namespace HelixToolkit.Wpf.SharpDX
         /// </summary>
         /// <param name="technique"></param>
         /// <param name="layout"></param>
-        internal void RegisterLayout(RenderTechnique technique, InputLayout layout)
+        public void RegisterLayout(RenderTechnique technique, InputLayout layout)
         {
             data[technique.Name + "Layout"] = layout;
         }
@@ -597,7 +655,7 @@ namespace HelixToolkit.Wpf.SharpDX
         /// </summary>
         /// <param name="techniques"></param>
         /// <param name="layout"></param>
-        internal void RegisterLayout(RenderTechnique[] techniques, InputLayout layout)
+        public void RegisterLayout(RenderTechnique[] techniques, InputLayout layout)
         {
             foreach (var tech in techniques)
                 data[tech.Name + "Layout"] = layout;
@@ -696,7 +754,6 @@ namespace HelixToolkit.Wpf.SharpDX
         public Vector3 Normal;
         public Vector3 Tangent;
         public Vector3 BiTangent;
-
         public const int SizeInBytes = 4 * (4 + 4 + 2 + 3 + 3 + 3);
     }
 
@@ -705,7 +762,8 @@ namespace HelixToolkit.Wpf.SharpDX
     {
         public Vector4 Position;
         public Color4 Color;
-        public const int SizeInBytes = 4 * (4 + 4);
+        public Vector4 Parameters;
+        public const int SizeInBytes = 4 * (4 + 4 + 4);
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -721,7 +779,15 @@ namespace HelixToolkit.Wpf.SharpDX
         public Vector4 Position;
         public Color4 Color;
         public Vector4 TexCoord;
-        //public Vector2 Offset;
+        public const int SizeInBytes = 4 * (4 + 4 + 4);
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    public struct PointsVertex
+    {
+        public Vector4 Position;
+        public Color4 Color;
+        public Vector4 Parameters;
         public const int SizeInBytes = 4 * (4 + 4 + 4);
     }
 }
