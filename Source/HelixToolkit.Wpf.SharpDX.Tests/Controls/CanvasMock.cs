@@ -19,8 +19,8 @@ namespace HelixToolkit.Wpf.SharpDX.Tests.Controls
         }
 
         public Device Device { get; private set; }
-        Color4 IRenderHost.ClearColor { get; }
-        Device IRenderHost.Device { get; }
+        //Color4 IRenderHost.ClearColor { get; }
+        //Device IRenderHost.Device { get; }
         public Color4 ClearColor { get; private set; }
         public bool IsShadowMapEnabled { get; private set; }
         public bool IsMSAAEnabled { get; private set; }
